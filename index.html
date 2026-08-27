@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Ticket — A Night in Monte Carlo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,500&family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --felt: #0a0e13;
+    --felt-deep: #05070a;
+    --ivory: #f3ede1;
+    --ivory-dim: rgba(243,237,225,0.55);
+    --gold-foil: #d4af37;
+    --gold-foil-dim: rgba(212,175,55,0.35);
+    --font-display: 'Playfair Display', serif;
+    --font-structure: 'Oswald', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+
+    /* team accent — overwritten by JS based on ?team= */
+    --team: #16283f;
+    --team-dim: rgba(22,40,63,0.28);
+    --suit-glyph: '♠';
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse at top, rgba(212,175,55,0.06), transparent 55%),
+      var(--felt-deep);
+    background-image:
+      radial-gradient(ellipse at top, rgba(212,175,55,0.06), transparent 55%),
+      repeating-linear-gradient(135deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px),
+      var(--felt-deep);
+    font-family: var(--font-structure);
+    color: var(--ivory);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px 48px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gold-foil);
+    margin-bottom: 18px;
+    text-align: center;
+  }
+
+  /* ---- Ticket ---- */
+  .ticket {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    border-radius: 14px;
+    overflow: visible;
+    filter: drop-shadow(0 18px 40px rgba(0,0,0,0.55));
+    position: relative;
+  }
+
+  .stub-main, .stub-tear {
+    background: linear-gradient(165deg, var(--team) 0%, var(--felt) 68%);
+    position: relative;
+  }
+
+  .stub-main {
+    flex: 1;
+    padding: 30px 26px 26px;
+    border-radius: 14px 0 0 14px;
+    border: 1px solid var(--gold-foil-dim);
+    border-right: none;
+  }
+
+  .stub-tear {
+    width: 132px;
+    flex-shrink: 0;
+    border-radius: 0 14px 14px 0;
+    border: 1px solid var(--gold-foil-dim);
+    border-left: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 12px;
+    gap: 14px;
+  }
+
+  /* perforation line with punched notches */
+  .perforation {
+    position: relative;
+    width: 0;
+    border-left: 2px dashed var(--gold-foil-dim);
+  }
+  .notch {
+    position: absolute;
+    left: -11px;
+    width: 22px; height: 22px;
+    background: var(--felt-deep);
+    border-radius: 50%;
+  }
+  .notch.top { top: -11px; }
+  .notch.bottom { bottom: -11px; }
+
+  .suit {
+    font-size: 15px;
+    color: var(--gold-foil);
+    letter-spacing: 0.4em;
+    opacity: 0.85;
+  }
+
+  .brandline {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold-foil);
+    opacity: 0.9;
+  }
+
+  .title {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 26px;
+    line-height: 1.15;
+    margin: 10px 0 2px;
+    color: var(--ivory);
+  }
+
+  .subtitle {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ivory-dim);
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px dashed var(--gold-foil-dim);
+  }
+
+  .field { margin-bottom: 13px; }
+  .field .label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--gold-foil);
+    display: block;
+    margin-bottom: 3px;
+  }
+  .field .value {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--ivory);
+  }
+  .field .value.small {
+    font-size: 13px;
+    color: var(--ivory-dim);
+    font-weight: 400;
+  }
+
+  .team-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 6px;
+    padding: 5px 12px 5px 10px;
+    border: 1px solid var(--gold-foil-dim);
+    border-radius: 20px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ivory);
+  }
+  .team-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold-foil); }
+
+  .stub-tear .stub-label {
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--gold-foil);
+    text-align: center;
+  }
+
+  #qrcode {
+    background: var(--ivory);
+    padding: 8px;
+    border-radius: 6px;
+    line-height: 0;
+  }
+
+  .ticket-id {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--ivory);
+    text-align: center;
+    word-break: break-all;
+  }
+
+  .admit-one {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    font-family: var(--font-structure);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ivory-dim);
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    translate: 0 -50%;
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .footer-note {
+    max-width: 420px;
+    text-align: center;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--ivory-dim);
+    margin-top: 26px;
+  }
+  .footer-note strong { color: var(--gold-foil); font-weight: 500; }
+
+  .save-btn {
+    margin-top: 20px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: transparent;
+    color: var(--gold-foil);
+    border: 1px solid var(--gold-foil-dim);
+    padding: 12px 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .save-btn:hover, .save-btn:focus-visible {
+    background: var(--gold-foil-dim);
+    border-color: var(--gold-foil);
+  }
+  .save-btn:disabled { opacity: 0.5; cursor: default; }
+
+  @media (max-width: 460px) {
+    .ticket { max-width: 360px; }
+    .stub-tear { width: 108px; padding: 16px 8px; }
+    #qrcode img, #qrcode canvas { width: 84px !important; height: 84px !important; }
+    .title { font-size: 22px; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ticket { animation: rise 0.6s ease-out; }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+  <div class="eyebrow">PSG · Institute of Civil Engineering — SPUP</div>
+
+  <div class="ticket" id="ticket">
+    <div class="stub-main">
+      <span class="admit-one">Admit One</span>
+      <span class="suit" id="suit-main">♠</span>
+      <div class="brandline">CE Day &amp; Night · 19 Sept 2026</div>
+      <div class="title">A Night in<br>Monte&nbsp;Carlo</div>
+      <div class="subtitle">Guest ticket &amp; attendance pass</div>
+
+      <div class="field">
+        <span class="label">Guest</span>
+        <span class="value" id="f-name">—</span>
+      </div>
+      <div class="field">
+        <span class="label">Program / Year</span>
+        <span class="value small" id="f-year">—</span>
+      </div>
+      <div class="field">
+        <span class="label">Team</span>
+        <div class="team-pill"><span class="dot"></span><span id="f-team">—</span></div>
+      </div>
+    </div>
+
+    <div class="perforation">
+      <div class="notch top"></div>
+      <div class="notch bottom"></div>
+    </div>
+
+    <div class="stub-tear">
+      <span class="stub-label">Scan at entry</span>
+      <div id="qrcode"></div>
+      <span class="ticket-id" id="f-id">—</span>
+    </div>
+  </div>
+
+  <p class="footer-note">
+    This ticket is unique to you and doubles as your <strong>attendance record</strong>.
+    Save a screenshot or use <strong>Save Ticket</strong> below — present the QR code at the venue entrance.
+  </p>
+
+  <button class="save-btn" id="save-btn">Save Ticket as Image</button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    // ---- Team configuration ----
+    // Keys match the Tally calculated-field values we will send in the redirect URL.
+    const TEAMS = {
+      lucarians:  { label: 'Lucarians',  suit: '♠', color: '#16283f', dim: 'rgba(22,40,63,0.35)' },
+      monarchs:   { label: 'Monarchs',   suit: '♥', color: '#5c1a2e', dim: 'rgba(92,26,46,0.35)' },
+      vesperians: { label: 'Vesperians', suit: '♦', color: '#8a6a12', dim: 'rgba(138,106,18,0.35)' },
+    };
+
+    function getParams() {
+      const p = new URLSearchParams(window.location.search);
+      return {
+        name: p.get('name') || 'Guest',
+        year: p.get('year') || p.get('program') || '',
+        team: (p.get('team') || 'lucarians').toLowerCase().trim(),
+        id: p.get('id') || p.get('submissionId') || cryptoFallbackId(),
+      };
+    }
+
+    function cryptoFallbackId() {
+      // Fallback only used if opened without a Tally redirect (e.g. testing the page directly)
+      return 'PREVIEW-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+    }
+
+    function applyTeamTheme(teamKey) {
+      const team = TEAMS[teamKey] || TEAMS.lucarians;
+      document.documentElement.style.setProperty('--team', team.color);
+      document.documentElement.style.setProperty('--team-dim', team.dim);
+      document.getElementById('suit-main').textContent = team.suit;
+      document.getElementById('f-team').textContent = team.label;
+      return team;
+    }
+
+    function render() {
+      const data = getParams();
+      applyTeamTheme(data.team);
+      document.getElementById('f-name').textContent = data.name;
+      document.getElementById('f-year').textContent = data.year || '—';
+      document.getElementById('f-id').textContent = data.id;
+
+      new QRCode(document.getElementById('qrcode'), {
+        text: data.id,
+        width: 104,
+        height: 104,
+        colorDark: '#0a0e13',
+        colorLight: '#f3ede1',
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    }
+
+    render();
+
+    document.getElementById('save-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('save-btn');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        const canvas = await html2canvas(document.getElementById('ticket'), {
+          backgroundColor: null,
+          scale: 2,
+        });
+        const link = document.createElement('a');
+        const idEl = document.getElementById('f-id').textContent;
+        link.download = `monte-carlo-ticket-${idEl}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      } catch (e) {
+        console.error(e);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Ticket as Image';
+      }
+    });
+  </script>
+
+</body>
+</html>
