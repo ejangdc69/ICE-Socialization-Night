@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Check-In — A Night in Monte Carlo</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,500&family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --felt: #0a0e13;
+    --felt-deep: #05070a;
+    --ivory: #f3ede1;
+    --gold: #d4af37;
+    --green: #4a9d6e;
+    --red: #b3423a;
+    --amber: #c98a2c;
+    --font-display: 'Playfair Display', serif;
+    --font-structure: 'Oswald', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--felt-deep);
+    color: var(--ivory);
+    font-family: var(--font-structure);
+    overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  header {
+    text-align: center;
+    padding: 14px 12px 10px;
+    flex-shrink: 0;
+  }
+  header .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  header h1 {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 22px;
+    margin: 4px 0 0;
+  }
+
+  #scanner-wrap {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+  }
+  #reader { width: min(92vw, 420px); }
+  #reader video { border-radius: 10px; }
+
+  .scan-hint {
+    position: absolute;
+    bottom: 18px;
+    left: 0; right: 0;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(243,237,225,0.5);
+  }
+
+  /* ---- Result overlay ---- */
+  #result {
+    position: fixed;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 32px 24px;
+    z-index: 10;
+  }
+  #result.show { display: flex; }
+  #result.valid { background: var(--green); }
+  #result.duplicate { background: var(--amber); }
+  #result.invalid, #result.not_found, #result.error { background: var(--red); }
+
+  #result .icon { font-size: 64px; line-height: 1; margin-bottom: 10px; }
+  #result .status-label {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    opacity: 0.9;
+  }
+  #result .guest-name {
+    font-family: var(--font-display);
+    font-size: 34px;
+    font-style: italic;
+    margin: 0 0 6px;
+  }
+  #result .guest-detail {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    opacity: 0.92;
+    margin: 2px 0;
+  }
+  #result .dismiss-note {
+    margin-top: 28px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    opacity: 0.75;
+  }
+
+  #stats {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    gap: 22px;
+    padding: 10px 12px calc(14px + env(safe-area-inset-bottom));
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: rgba(243,237,225,0.6);
+  }
+  #stats b { color: var(--gold); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <div class="eyebrow">PSG-ICE · Door Check-In</div>
+    <h1>A Night in Monte Carlo</h1>
+  </header>
+
+  <div id="scanner-wrap">
+    <div id="reader"></div>
+    <div class="scan-hint">Point camera at guest's ticket QR</div>
+  </div>
+
+  <div id="stats">
+    <span>Checked in: <b id="stat-valid">0</b></span>
+    <span>Duplicates blocked: <b id="stat-dup">0</b></span>
+    <span>Not found: <b id="stat-invalid">0</b></span>
+  </div>
+</div>
+
+<div id="result">
+  <div class="icon" id="r-icon">—</div>
+  <div class="status-label" id="r-status">—</div>
+  <div class="guest-name" id="r-name">—</div>
+  <div class="guest-detail" id="r-team">—</div>
+  <div class="guest-detail" id="r-id">—</div>
+  <div class="dismiss-note">Tap anywhere to scan next guest</div>
+</div>
+
+<script>
+  // === CONFIGURE THIS ===
+  // Paste the Apps Script Web App URL here once deployed (ends in /exec)
+  const APPS_SCRIPT_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+
+  const TEAM_LABELS = {
+    lucarians: 'Lucarians',
+    monarchs: 'Monarchs',
+    vesperians: 'Vesperians',
+    faculty: 'Faculty Guest',
+    guest: 'Guest',
+  };
+
+  const stats = { valid: 0, duplicate: 0, invalid: 0 };
+  let busy = false;
+
+  function extractId(scannedText) {
+    // Ticket QR encodes a full URL like ...?...&id=XXXXX
+    try {
+      const url = new URL(scannedText);
+      const id = url.searchParams.get('id');
+      if (id) return id;
+    } catch (e) {
+      // Not a URL — maybe raw ID was scanned directly
+    }
+    return scannedText.trim();
+  }
+
+  async function verify(id) {
+    const res = await fetch(`${APPS_SCRIPT_URL}?id=${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('Network error');
+    return res.json();
+  }
+
+  function showResult(status, data) {
+    const el = document.getElementById('result');
+    el.className = 'show ' + status;
+
+    const icons = { valid: '✓', duplicate: '⟳', not_found: '✕', invalid: '✕', error: '!' };
+    const labels = {
+      valid: 'Welcome — Entry Granted',
+      duplicate: 'Already Checked In',
+      not_found: 'No Matching Registration',
+      invalid: 'Invalid Ticket',
+      error: 'System Error — Check Manually',
+    };
+
+    document.getElementById('r-icon').textContent = icons[status] || '?';
+    document.getElementById('r-status').textContent = labels[status] || status;
+    document.getElementById('r-name').textContent = data.name || '—';
+    document.getElementById('r-team').textContent = data.team
+      ? (TEAM_LABELS[data.team] || data.team)
+      : (data.message || '');
+    document.getElementById('r-id').textContent = data.idnum ? ('ID: ' + data.idnum) : '';
+
+    if (status === 'valid') stats.valid++;
+    else if (status === 'duplicate') stats.duplicate++;
+    else stats.invalid++;
+    document.getElementById('stat-valid').textContent = stats.valid;
+    document.getElementById('stat-dup').textContent = stats.duplicate;
+    document.getElementById('stat-invalid').textContent = stats.invalid;
+  }
+
+  document.getElementById('result').addEventListener('click', () => {
+    document.getElementById('result').classList.remove('show');
+    busy = false;
+  });
+
+  const html5QrCode = new Html5Qrcode('reader');
+
+  async function onScanSuccess(decodedText) {
+    if (busy) return;
+    busy = true;
+
+    const id = extractId(decodedText);
+    if (!id) { busy = false; return; }
+
+    if (APPS_SCRIPT_URL.includes('PASTE_YOUR')) {
+      showResult('error', { message: 'Scanner not configured yet — set APPS_SCRIPT_URL in the page source.' });
+      return;
+    }
+
+    try {
+      const data = await verify(id);
+      showResult(data.status, data);
+    } catch (e) {
+      showResult('error', { message: 'Could not reach verification server.' });
+    }
+  }
+
+  html5QrCode.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 260, height: 260 } },
+    onScanSuccess,
+    () => {} // ignore per-frame scan failures
+  ).catch(err => {
+    document.querySelector('.scan-hint').textContent = 'Camera access denied or unavailable.';
+  });
+</script>
+
+</body>
+</html>
