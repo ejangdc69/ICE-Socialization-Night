@@ -56,8 +56,60 @@
     justify-content: center;
     min-height: 0;
   }
-  #reader { width: min(92vw, 420px); }
-  #reader video { border-radius: 10px; }
+  #reader { width: min(92vw, 420px); min-height: 260px; }
+  #reader video {
+    border-radius: 10px;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .scan-error {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--red);
+    background: rgba(179,66,58,0.12);
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--ivory);
+    max-width: 90vw;
+    display: none;
+  }
+  .scan-error.show { display: block; }
+
+  .manual-entry {
+    flex-shrink: 0;
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    align-items: center;
+  }
+  .manual-entry input {
+    flex: 1;
+    background: rgba(243,237,225,0.06);
+    border: 1px solid rgba(212,175,55,0.3);
+    color: var(--ivory);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 6px;
+  }
+  .manual-entry input::placeholder { color: rgba(243,237,225,0.35); }
+  .manual-entry button {
+    background: var(--gold);
+    color: var(--felt-deep);
+    border: none;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
 
   .scan-hint {
     position: absolute;
@@ -143,7 +195,14 @@
 
   <div id="scanner-wrap">
     <div id="reader"></div>
-    <div class="scan-hint">Point camera at guest's ticket QR</div>
+    <div class="scan-hint" id="scan-hint">Point camera at guest's ticket QR</div>
+  </div>
+
+  <div class="scan-error" id="scan-error"></div>
+
+  <div class="manual-entry">
+    <input type="text" id="manual-id" placeholder="Or type ticket ID manually…" autocomplete="off" autocapitalize="off">
+    <button id="manual-submit">Check In</button>
   </div>
 
   <div id="stats">
@@ -235,8 +294,10 @@
   async function onScanSuccess(decodedText) {
     if (busy) return;
     busy = true;
+    await runCheckIn(extractId(decodedText));
+  }
 
-    const id = extractId(decodedText);
+  async function runCheckIn(id) {
     if (!id) { busy = false; return; }
 
     if (APPS_SCRIPT_URL.includes('PASTE_YOUR')) {
@@ -252,14 +313,58 @@
     }
   }
 
-  html5QrCode.start(
-    { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 260, height: 260 } },
-    onScanSuccess,
-    () => {} // ignore per-frame scan failures
-  ).catch(err => {
-    document.querySelector('.scan-hint').textContent = 'Camera access denied or unavailable.';
+  // ---- Manual entry fallback (always available, independent of camera) ----
+  document.getElementById('manual-submit').addEventListener('click', () => {
+    const input = document.getElementById('manual-id');
+    const val = input.value.trim();
+    if (!val || busy) return;
+    busy = true;
+    runCheckIn(val);
+    input.value = '';
   });
+  document.getElementById('manual-id').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('manual-submit').click();
+  });
+
+  // ---- Camera init, with real error surfacing instead of a silent black screen ----
+  function showCameraError(message) {
+    const el = document.getElementById('scan-error');
+    el.textContent = message;
+    el.classList.add('show');
+    document.getElementById('scan-hint').textContent = 'Camera unavailable — use manual entry below.';
+  }
+
+  async function initCamera() {
+    let cameras;
+    try {
+      cameras = await Html5Qrcode.getCameras();
+    } catch (err) {
+      showCameraError('Camera permission denied or unavailable (' + (err.message || err) + '). You can still check guests in using the manual entry field below.');
+      return;
+    }
+
+    if (!cameras || cameras.length === 0) {
+      showCameraError('No camera found on this device. Use manual entry below.');
+      return;
+    }
+
+    // Prefer a rear/back camera if the device reports one by label
+    const rear = cameras.find(c => /back|rear|environment/i.test(c.label));
+    const cameraId = rear ? rear.id : cameras[cameras.length - 1].id;
+
+    try {
+      await html5QrCode.start(
+        cameraId,
+        { fps: 10, qrbox: { width: 260, height: 260 } },
+        onScanSuccess,
+        () => {} // ignore per-frame scan misses, not real errors
+      );
+    } catch (err) {
+      showCameraError('Could not start camera (' + (err.message || err) + '). Use manual entry below, or reload the page.');
+    }
+  }
+
+  initCamera();
 </script>
 
 </body>
