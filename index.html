@@ -448,7 +448,11 @@
           await document.fonts.ready; // avoid capturing a frame with fallback/missing glyphs
         }
         const canvas = await html2canvas(ticketEl, {
-          backgroundColor: null,
+          backgroundColor: '#05070a', // opaque felt-black, not transparent —
+          // a transparent PNG composites darker/muddier depending on
+          // whatever surface it's later viewed against (dark chat apps,
+          // photo viewers, etc.), which produced exactly this "grayed
+          // down" look. An opaque export looks identical everywhere.
           scale: 2,
           useCORS: true,
         });
