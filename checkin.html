@@ -277,11 +277,21 @@
     return scannedText.trim();
   }
 
-  async function verify(id) {
+  async function verify(id, isRetry) {
     const key = ACCESS_KEY ? `&key=${encodeURIComponent(ACCESS_KEY)}` : '';
     const res = await fetch(`${APPS_SCRIPT_URL}?id=${encodeURIComponent(id)}${key}`);
     if (!res.ok) throw new Error('Network error');
-    return res.json();
+    const data = await res.json();
+
+    // Tally's Sheets sync isn't instant. If someone scans within a couple
+    // seconds of submitting, the row may not have landed in the sheet yet —
+    // one silent retry after a short wait handles that race without
+    // making staff manually rescan.
+    if (data.status === 'not_found' && !isRetry) {
+      await new Promise(r => setTimeout(r, 2500));
+      return verify(id, true);
+    }
+    return data;
   }
 
   function showResult(status, data) {
@@ -417,14 +427,15 @@
       return showCameraError('No camera detected on this device. Use manual entry below.');
     }
 
-    // Request the rear camera directly via constraints — this avoids
-    // pattern-matching camera labels entirely. On Android, camera labels
-    // are frequently blank until a stream is already active, so label
-    // matching silently fails and falls back to the wrong (often
-    // front-facing) camera. facingMode sidesteps that failure mode.
+    // This library version's own validator only accepts facingMode as a
+    // plain string or { exact: ... } — NOT { ideal: ... }, which is valid
+    // browser getUserMedia syntax but fails this library's internal check
+    // with "'facingMode' should be string or object with exact as key."
+    // Plain string is safest: it degrades gracefully on devices with only
+    // one camera, unlike { exact: ... } which hard-fails if no rear camera.
     try {
       await html5QrCode.start(
-        { facingMode: { ideal: 'environment' } },
+        { facingMode: 'environment' },
         {
           fps: 10,
           qrbox: (viewfinderWidth, viewfinderHeight) => {
@@ -436,7 +447,25 @@
         () => {} // ignore per-frame scan misses, not real errors
       );
     } catch (err) {
-      showCameraError('Could not start the camera (' + (err && err.message || err) + '). Use manual entry below, or reload the page.');
+      // Fallback: some devices/browsers reject facingMode entirely (rare,
+      // but seen on some iOS Safari versions) — retry with the first
+      // available camera by id instead of a facingMode constraint.
+      try {
+        await html5QrCode.start(
+          cameras[0].id,
+          {
+            fps: 10,
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              const edge = Math.min(viewfinderWidth, viewfinderHeight) * 0.72;
+              return { width: edge, height: edge };
+            },
+          },
+          onScanSuccess,
+          () => {}
+        );
+      } catch (err2) {
+        showCameraError('Could not start the camera (' + (err2 && err2.message || err2) + '). Use manual entry below, or reload the page.');
+      }
     }
   }
 
