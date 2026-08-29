@@ -416,16 +416,40 @@
       const btn = document.getElementById('save-btn');
       btn.disabled = true;
       btn.textContent = 'Saving…';
+
+      const ticketEl = document.getElementById('ticket');
+      const stubMain = document.querySelector('.stub-main');
+      const stubTear = document.querySelector('.stub-tear');
+
+      // Read the actual computed team colors and bake them in as literal
+      // inline gradients, and temporarily strip the drop-shadow filter.
+      // html2canvas's default renderer is inconsistent about resolving CSS
+      // custom properties inside gradient functions and about compositing
+      // filters — giving it plain, literal values sidesteps both failure
+      // modes rather than trying to detect which one is happening.
+      // (foreignObjectRendering was tried as a fix for this previously —
+      // it solves the gradient issue by asking the browser to rasterize
+      // via SVG, but on several mobile browsers, notably iOS Safari, it
+      // can silently produce a fully black canvas with no thrown error
+      // when any referenced resource isn't provably CORS-clean. That's a
+      // worse failure than what it fixed, so it's been removed.)
+      const teamColor = getComputedStyle(document.documentElement).getPropertyValue('--team').trim();
+      const feltColor = getComputedStyle(document.documentElement).getPropertyValue('--felt').trim();
+      const literalGradient = `linear-gradient(165deg, ${teamColor} 0%, ${feltColor} 68%)`;
+      const prevMainBg = stubMain.style.background;
+      const prevTearBg = stubTear.style.background;
+      const prevFilter = ticketEl.style.filter;
+      stubMain.style.background = literalGradient;
+      stubTear.style.background = literalGradient;
+      ticketEl.style.filter = 'none';
+
       try {
-        // foreignObjectRendering asks the browser to rasterize the actual
-        // live DOM (via SVG) instead of html2canvas re-implementing CSS
-        // painting itself. Fixes two prior bugs in one move: canvas-drawn
-        // QR codes were coming out blank, and gradient colors were being
-        // approximated darker/duller than the real on-screen ticket.
-        const canvas = await html2canvas(document.getElementById('ticket'), {
+        if (document.fonts && document.fonts.ready) {
+          await document.fonts.ready; // avoid capturing a frame with fallback/missing glyphs
+        }
+        const canvas = await html2canvas(ticketEl, {
           backgroundColor: null,
-          scale: 3,
-          foreignObjectRendering: true,
+          scale: 2,
           useCORS: true,
         });
         const link = document.createElement('a');
@@ -434,22 +458,12 @@
         link.href = canvas.toDataURL('image/png');
         link.click();
       } catch (e) {
-        console.error('foreignObjectRendering export failed, retrying with default renderer', e);
-        try {
-          const canvas = await html2canvas(document.getElementById('ticket'), {
-            backgroundColor: null,
-            scale: 3,
-          });
-          const link = document.createElement('a');
-          const idEl = document.getElementById('f-id').textContent;
-          link.download = `monte-carlo-ticket-${idEl}.png`;
-          link.href = canvas.toDataURL('image/png');
-          link.click();
-        } catch (e2) {
-          console.error(e2);
-          alert('Could not save ticket image. Please take a screenshot instead.');
-        }
+        console.error(e);
+        alert('Could not save ticket image. Please take a screenshot instead.');
       } finally {
+        stubMain.style.background = prevMainBg;
+        stubTear.style.background = prevTearBg;
+        ticketEl.style.filter = prevFilter;
         btn.disabled = false;
         btn.textContent = 'Save Ticket as Image';
       }
