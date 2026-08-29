@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Check-In — A Night in Monte Carlo</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,500&family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
@@ -78,11 +78,25 @@
   }
   .scan-error.show { display: block; }
 
+  .manual-toggle {
+    flex-shrink: 0;
+    display: block;
+    margin: 6px auto 0;
+    background: none;
+    border: none;
+    color: rgba(243,237,225,0.4);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 6px 10px;
+  }
   .manual-entry {
     flex-shrink: 0;
     display: flex;
     gap: 8px;
-    padding: 10px 16px;
+    padding: 6px 16px 10px;
     align-items: center;
   }
   .manual-entry input {
@@ -183,6 +197,14 @@
     color: rgba(243,237,225,0.6);
   }
   #stats b { color: var(--gold); font-weight: 600; }
+  .stats-note {
+    flex-shrink: 0;
+    text-align: center;
+    padding: 0 16px calc(10px + env(safe-area-inset-bottom));
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: rgba(243,237,225,0.35);
+  }
 </style>
 </head>
 <body>
@@ -200,16 +222,18 @@
 
   <div class="scan-error" id="scan-error"></div>
 
-  <div class="manual-entry">
-    <input type="text" id="manual-id" placeholder="Or type ticket ID manually…" autocomplete="off" autocapitalize="off">
+  <button class="manual-toggle" id="manual-toggle">Trouble scanning? Staff manual entry</button>
+  <div class="manual-entry" id="manual-entry" style="display:none;">
+    <input type="text" id="manual-id" placeholder="Type ticket ID number…" autocomplete="off" autocapitalize="off">
     <button id="manual-submit">Check In</button>
   </div>
 
   <div id="stats">
-    <span>Checked in: <b id="stat-valid">0</b></span>
-    <span>Duplicates blocked: <b id="stat-dup">0</b></span>
-    <span>Not found: <b id="stat-invalid">0</b></span>
+    <span>This device — In: <b id="stat-valid">0</b></span>
+    <span>Dup: <b id="stat-dup">0</b></span>
+    <span>Failed: <b id="stat-invalid">0</b></span>
   </div>
+  <div class="stats-note">Counts are per-device only. The Google Sheet's "Checked In" column is the real total across all devices.</div>
 </div>
 
 <div id="result">
@@ -225,6 +249,10 @@
   // === CONFIGURE THIS ===
   // Paste the Apps Script Web App URL here once deployed (ends in /exec)
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVeMTb0yk_FZlYfEHCyYGcfxEnzBhSrxOcpSuwB62-neywFep1kpo6djOD4O586Af2lg/exec';
+
+  // Optional: must match ACCESS_KEY in CheckInScript.gs if you set one there.
+  // Leave both blank to skip this (fine for a low-stakes one-night event).
+  const ACCESS_KEY = '';
 
   const TEAM_LABELS = {
     lucarians: 'Lucarians',
@@ -250,7 +278,8 @@
   }
 
   async function verify(id) {
-    const res = await fetch(`${APPS_SCRIPT_URL}?id=${encodeURIComponent(id)}`);
+    const key = ACCESS_KEY ? `&key=${encodeURIComponent(ACCESS_KEY)}` : '';
+    const res = await fetch(`${APPS_SCRIPT_URL}?id=${encodeURIComponent(id)}${key}`);
     if (!res.ok) throw new Error('Network error');
     return res.json();
   }
@@ -282,9 +311,15 @@
     document.getElementById('stat-valid').textContent = stats.valid;
     document.getElementById('stat-dup').textContent = stats.duplicate;
     document.getElementById('stat-invalid').textContent = stats.invalid;
+
+    // Haptic feedback so staff don't have to watch the screen for every scan
+    if (navigator.vibrate) {
+      navigator.vibrate(status === 'valid' ? 80 : [60, 60, 60]);
+    }
   }
 
   document.getElementById('result').addEventListener('click', () => {
+    dismissGen++; // invalidate any pending auto-dismiss for this scan
     document.getElementById('result').classList.remove('show');
     busy = false;
   });
@@ -302,6 +337,7 @@
 
     if (APPS_SCRIPT_URL.includes('PASTE_YOUR')) {
       showResult('error', { message: 'Scanner not configured yet — set APPS_SCRIPT_URL in the page source.' });
+      scheduleAutoDismiss();
       return;
     }
 
@@ -310,10 +346,35 @@
       showResult(data.status, data);
     } catch (e) {
       showResult('error', { message: 'Could not reach verification server.' });
+    } finally {
+      scheduleAutoDismiss();
     }
   }
 
-  // ---- Manual entry fallback (always available, independent of camera) ----
+  let dismissGen = 0;
+
+  function scheduleAutoDismiss() {
+    // Guarantees the scanner never gets stuck waiting for a tap that doesn't
+    // come — a missed dismiss shouldn't be able to stall the whole line.
+    // Generation counter guards against a stale timeout clearing state for
+    // a *newer* scan if staff dismiss manually and rescan quickly.
+    const gen = ++dismissGen;
+    setTimeout(() => {
+      if (gen !== dismissGen) return;
+      document.getElementById('result').classList.remove('show');
+      busy = false;
+    }, 1800);
+  }
+
+  // ---- Manual entry fallback: deliberately hidden behind a toggle so it's
+  // a staff action, not a front-and-center self-check-in box anyone at the
+  // door can use without ever holding a ticket. ----
+  document.getElementById('manual-toggle').addEventListener('click', () => {
+    const box = document.getElementById('manual-entry');
+    const showing = box.style.display !== 'none';
+    box.style.display = showing ? 'none' : 'flex';
+    if (!showing) document.getElementById('manual-id').focus();
+  });
   document.getElementById('manual-submit').addEventListener('click', () => {
     const input = document.getElementById('manual-id');
     const val = input.value.trim();
@@ -335,32 +396,47 @@
   }
 
   async function initCamera() {
-    let cameras;
+    // Diagnostic checks first — these turn "black screen, no idea why" into
+    // an actual on-screen answer instead of another round of guessing.
+    if (typeof Html5Qrcode === 'undefined') {
+      return showCameraError('Scanner library failed to load (CDN blocked or no internet on first load). Reload the page, or use manual entry below.');
+    }
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return showCameraError('This page has no camera access in its current context (protocol: ' + location.protocol + '). ' +
+        'This usually means the page was opened inside an app\'s built-in browser (e.g. tapped from Messenger/Facebook) ' +
+        'or as a downloaded file, rather than the real page. Open the https:// link directly in Chrome or Safari, not from inside another app.');
+    }
+
+    let cameras = [];
     try {
       cameras = await Html5Qrcode.getCameras();
     } catch (err) {
-      showCameraError('Camera permission denied or unavailable (' + (err.message || err) + '). You can still check guests in using the manual entry field below.');
-      return;
+      return showCameraError('Could not list cameras (' + (err && err.message || err) + '). Use manual entry below.');
+    }
+    if (!cameras.length) {
+      return showCameraError('No camera detected on this device. Use manual entry below.');
     }
 
-    if (!cameras || cameras.length === 0) {
-      showCameraError('No camera found on this device. Use manual entry below.');
-      return;
-    }
-
-    // Prefer a rear/back camera if the device reports one by label
-    const rear = cameras.find(c => /back|rear|environment/i.test(c.label));
-    const cameraId = rear ? rear.id : cameras[cameras.length - 1].id;
-
+    // Request the rear camera directly via constraints — this avoids
+    // pattern-matching camera labels entirely. On Android, camera labels
+    // are frequently blank until a stream is already active, so label
+    // matching silently fails and falls back to the wrong (often
+    // front-facing) camera. facingMode sidesteps that failure mode.
     try {
       await html5QrCode.start(
-        cameraId,
-        { fps: 10, qrbox: { width: 260, height: 260 } },
+        { facingMode: { ideal: 'environment' } },
+        {
+          fps: 10,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const edge = Math.min(viewfinderWidth, viewfinderHeight) * 0.72;
+            return { width: edge, height: edge };
+          },
+        },
         onScanSuccess,
         () => {} // ignore per-frame scan misses, not real errors
       );
     } catch (err) {
-      showCameraError('Could not start camera (' + (err.message || err) + '). Use manual entry below, or reload the page.');
+      showCameraError('Could not start the camera (' + (err && err.message || err) + '). Use manual entry below, or reload the page.');
     }
   }
 
