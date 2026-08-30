@@ -417,42 +417,39 @@
       btn.disabled = true;
       btn.textContent = 'Saving…';
 
-      const ticketEl = document.getElementById('ticket');
-      const stubMain = document.querySelector('.stub-main');
-      const stubTear = document.querySelector('.stub-tear');
+      // Capture an isolated CLONE rather than mutating the live element.
+      // Toggling `filter` on/off on the live #ticket right before capture
+      // was unreliable — pixel analysis of actual saved exports showed
+      // near-black output across the whole card (ivory backgrounds coming
+      // out as ~RGB(50,47,48) instead of ~RGB(243,237,225)), consistent
+      // with html2canvas's well-documented poor handling of CSS `filter`
+      // (specifically drop-shadow), regardless of read/write timing. A
+      // clone that never has the filter, transform, or animation applied
+      // sidesteps the bug entirely instead of racing against it.
+      const original = document.getElementById('ticket');
+      const clone = original.cloneNode(true);
+      clone.removeAttribute('id'); // avoid a duplicate #ticket id while both exist in the DOM
+      clone.style.filter = 'none';
+      clone.style.animation = 'none';
+      clone.style.transform = 'none';
+      clone.style.position = 'fixed';
+      clone.style.left = '-9999px';
+      clone.style.top = '0';
 
-      // Read the actual computed team colors and bake them in as literal
-      // inline gradients, and temporarily strip the drop-shadow filter.
-      // html2canvas's default renderer is inconsistent about resolving CSS
-      // custom properties inside gradient functions and about compositing
-      // filters — giving it plain, literal values sidesteps both failure
-      // modes rather than trying to detect which one is happening.
-      // (foreignObjectRendering was tried as a fix for this previously —
-      // it solves the gradient issue by asking the browser to rasterize
-      // via SVG, but on several mobile browsers, notably iOS Safari, it
-      // can silently produce a fully black canvas with no thrown error
-      // when any referenced resource isn't provably CORS-clean. That's a
-      // worse failure than what it fixed, so it's been removed.)
       const teamColor = getComputedStyle(document.documentElement).getPropertyValue('--team').trim();
       const feltColor = getComputedStyle(document.documentElement).getPropertyValue('--felt').trim();
       const literalGradient = `linear-gradient(165deg, ${teamColor} 0%, ${feltColor} 68%)`;
-      const prevMainBg = stubMain.style.background;
-      const prevTearBg = stubTear.style.background;
-      const prevFilter = ticketEl.style.filter;
-      stubMain.style.background = literalGradient;
-      stubTear.style.background = literalGradient;
-      ticketEl.style.filter = 'none';
+      clone.querySelector('.stub-main').style.background = literalGradient;
+      clone.querySelector('.stub-tear').style.background = literalGradient;
+
+      document.body.appendChild(clone);
 
       try {
         if (document.fonts && document.fonts.ready) {
           await document.fonts.ready; // avoid capturing a frame with fallback/missing glyphs
         }
-        const canvas = await html2canvas(ticketEl, {
-          backgroundColor: '#05070a', // opaque felt-black, not transparent —
-          // a transparent PNG composites darker/muddier depending on
-          // whatever surface it's later viewed against (dark chat apps,
-          // photo viewers, etc.), which produced exactly this "grayed
-          // down" look. An opaque export looks identical everywhere.
+        const canvas = await html2canvas(clone, {
+          backgroundColor: '#05070a', // opaque felt-black, not transparent
           scale: 2,
           useCORS: true,
         });
@@ -465,9 +462,7 @@
         console.error(e);
         alert('Could not save ticket image. Please take a screenshot instead.');
       } finally {
-        stubMain.style.background = prevMainBg;
-        stubTear.style.background = prevTearBg;
-        ticketEl.style.filter = prevFilter;
+        document.body.removeChild(clone);
         btn.disabled = false;
         btn.textContent = 'Save Ticket as Image';
       }
