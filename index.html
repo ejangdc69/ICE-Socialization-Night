@@ -344,6 +344,19 @@
         const org = p.get('org') || '';
         detail = org ? `${purpose} — ${org}` : purpose;
       }
+
+      const rawId = p.get('id') || p.get('submissionId');
+      const isDemo = p.get('demo') === '1';
+
+      // If there's no real ID and this ISN'T an explicit demo preview, this
+      // page was opened without a valid Tally redirect — e.g. a renamed
+      // form field silently broke the link, the same failure mode that hit
+      // the {{Submission ID}} merge tag earlier in this project. Previously
+      // this silently generated a normal-looking "PREVIEW-XXXXX" ticket —
+      // which is dangerous precisely because it looks completely valid.
+      // That failure needs to be loud, not quietly plausible.
+      const isBroken = !rawId && !isDemo;
+
       return {
         name: p.get('name') || 'Guest',
         idnum: p.get('idnum') || '—',
@@ -351,12 +364,14 @@
         team,
         isFaculty,
         isGuest,
-        id: p.get('id') || p.get('submissionId') || cryptoFallbackId(),
+        isBroken,
+        id: rawId || (isDemo ? cryptoFallbackId() : null),
       };
     }
 
     function cryptoFallbackId() {
-      // Fallback only used if opened without a Tally redirect (e.g. testing the page directly)
+      // Only reachable with an explicit ?demo=1 in the URL — genuine
+      // testing/preview use, never a silent production fallback.
       return 'PREVIEW-' + Math.random().toString(36).slice(2, 8).toUpperCase();
     }
 
@@ -371,6 +386,27 @@
 
     function render() {
       const data = getParams();
+
+      if (data.isBroken) {
+        // Loud and impossible to mistake for a real ticket — no team
+        // theming, no QR, no plausible-looking ID. If this shows up in
+        // production, a Tally field name changed and the redirect URL
+        // needs fixing, not a "huh, weird ticket" from a student at 7pm.
+        document.getElementById('ticket').innerHTML = `
+          <div style="padding:40px 28px; text-align:center; width:100%;">
+            <div style="font-size:15px; letter-spacing:0.1em; text-transform:uppercase; color:#ff6b6b; font-family:'IBM Plex Mono',monospace; margin-bottom:14px;">
+              ⚠ Registration Not Linked
+            </div>
+            <div style="font-size:14px; color:var(--ivory-dim); line-height:1.6;">
+              This ticket didn't receive a valid registration ID. Do not treat this as a valid entry pass.
+              Please contact PSG-ICE registration staff — do not attempt to save or present this screen at the door.
+            </div>
+          </div>`;
+        document.getElementById('save-btn').style.display = 'none';
+        console.error('Ticket page opened without a valid id/submissionId param — check the Tally redirect URL field mappings.');
+        return;
+      }
+
       applyTeamTheme(data.team);
       document.getElementById('f-name').textContent = data.name;
       document.getElementById('f-year').textContent = data.year || '—';

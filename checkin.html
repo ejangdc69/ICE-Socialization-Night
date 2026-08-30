@@ -153,6 +153,7 @@
   #result.valid { background: var(--green); }
   #result.duplicate { background: var(--amber); }
   #result.invalid, #result.not_found, #result.error { background: var(--red); }
+  #result.undone { background: #4a5568; }
 
   #result .icon { font-size: 64px; line-height: 1; margin-bottom: 10px; }
   #result .status-label {
@@ -223,6 +224,7 @@
   <div class="scan-error" id="scan-error"></div>
 
   <button class="manual-toggle" id="manual-toggle">Trouble scanning? Staff manual entry</button>
+  <button class="manual-toggle" id="undo-btn" style="display:none;">Undo last check-in (<span id="undo-name"></span>)</button>
   <div class="manual-entry" id="manual-entry" style="display:none;">
     <input type="text" id="manual-id" placeholder="Type ticket ID number…" autocomplete="off" autocapitalize="off">
     <button id="manual-submit">Check In</button>
@@ -277,19 +279,22 @@
     return scannedText.trim();
   }
 
-  async function verify(id, isRetry) {
+  let lastCheckedInId = null; // powers "Undo last check-in" — only ever the most recent success
+
+  async function verify(id, isRetry, action) {
     const key = ACCESS_KEY ? `&key=${encodeURIComponent(ACCESS_KEY)}` : '';
-    const res = await fetch(`${APPS_SCRIPT_URL}?id=${encodeURIComponent(id)}${key}`);
+    const actionParam = action ? `&action=${encodeURIComponent(action)}` : '';
+    const res = await fetch(`${APPS_SCRIPT_URL}?id=${encodeURIComponent(id)}${key}${actionParam}`);
     if (!res.ok) throw new Error('Network error');
     const data = await res.json();
 
     // Tally's Sheets sync isn't instant. If someone scans within a couple
     // seconds of submitting, the row may not have landed in the sheet yet —
     // one silent retry after a short wait handles that race without
-    // making staff manually rescan.
-    if (data.status === 'not_found' && !isRetry) {
+    // making staff manually rescan. (Only applies to normal check-ins, not undo.)
+    if (data.status === 'not_found' && !isRetry && action !== 'undo') {
       await new Promise(r => setTimeout(r, 2500));
-      return verify(id, true);
+      return verify(id, true, action);
     }
     return data;
   }
@@ -298,13 +303,14 @@
     const el = document.getElementById('result');
     el.className = 'show ' + status;
 
-    const icons = { valid: '✓', duplicate: '⟳', not_found: '✕', invalid: '✕', error: '!' };
+    const icons = { valid: '✓', duplicate: '⟳', not_found: '✕', invalid: '✕', error: '!', undone: '↺' };
     const labels = {
       valid: 'Welcome — Entry Granted',
       duplicate: 'Already Checked In',
       not_found: 'No Matching Registration',
       invalid: 'Invalid Ticket',
       error: 'System Error — Check Manually',
+      undone: 'Check-In Undone',
     };
 
     document.getElementById('r-icon').textContent = icons[status] || '?';
@@ -321,6 +327,21 @@
     document.getElementById('stat-valid').textContent = stats.valid;
     document.getElementById('stat-dup').textContent = stats.duplicate;
     document.getElementById('stat-invalid').textContent = stats.invalid;
+
+    // Only a genuine fresh check-in is undoable — not a duplicate block,
+    // not an already-undone action. Keyed to that specific scan so staff
+    // can only ever undo the one that just happened, not an arbitrary ID.
+    if (status === 'valid') {
+      lastCheckedInId = data.idnum || null;
+      const undoBtn = document.getElementById('undo-btn');
+      if (lastCheckedInId) {
+        document.getElementById('undo-name').textContent = data.name || lastCheckedInId;
+        undoBtn.style.display = 'block';
+      }
+    } else if (status === 'undone') {
+      lastCheckedInId = null;
+      document.getElementById('undo-btn').style.display = 'none';
+    }
 
     // Haptic feedback so staff don't have to watch the screen for every scan
     if (navigator.vibrate) {
@@ -373,8 +394,21 @@
       if (gen !== dismissGen) return;
       document.getElementById('result').classList.remove('show');
       busy = false;
-    }, 1800);
+    }, 4500);
   }
+
+  document.getElementById('undo-btn').addEventListener('click', async () => {
+    if (!lastCheckedInId || busy) return;
+    busy = true;
+    try {
+      const data = await verify(lastCheckedInId, false, 'undo');
+      showResult(data.status, data);
+    } catch (e) {
+      showResult('error', { message: 'Could not reach verification server.' });
+    } finally {
+      scheduleAutoDismiss();
+    }
+  });
 
   // ---- Manual entry fallback: deliberately hidden behind a toggle so it's
   // a staff action, not a front-and-center self-check-in box anyone at the
