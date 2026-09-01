@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thank You — A Night in Monte Carlo</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,500&family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --felt: #0a0e13;
+    --felt-deep: #05070a;
+    --ivory: #f3ede1;
+    --ivory-dim: rgba(243,237,225,0.6);
+    --gold: #d4af37;
+    --gold-dim: rgba(212,175,55,0.3);
+    --green: #4a9d6e;
+    --amber: #c98a2c;
+    --red: #b3423a;
+    --font-display: 'Playfair Display', serif;
+    --font-structure: 'Oswald', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100vh;
+    background: radial-gradient(ellipse at top, rgba(212,175,55,0.06), transparent 55%), var(--felt-deep);
+    color: var(--ivory);
+    font-family: var(--font-structure);
+    display: flex; align-items: center; justify-content: center;
+    padding: 32px 20px;
+  }
+  .card {
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+    border: 1px solid var(--gold-dim);
+    border-radius: 14px;
+    padding: 44px 30px;
+    background: linear-gradient(165deg, rgba(212,175,55,0.05) 0%, transparent 60%);
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 18px;
+  }
+  .icon { font-size: 48px; margin-bottom: 14px; line-height: 1; }
+  .icon.success { color: var(--green); }
+  .icon.warn { color: var(--amber); }
+  .icon.error { color: var(--red); }
+  h1 {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 26px;
+    margin: 0 0 12px;
+  }
+  p.detail {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ivory-dim);
+    margin: 0;
+  }
+  p.name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--gold);
+    margin-top: 16px;
+    text-transform: uppercase;
+  }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 2px solid var(--gold-dim);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    margin: 0 auto 18px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="eyebrow">PSG-ICE · CE Day &amp; Night</div>
+    <div id="content">
+      <div class="spinner"></div>
+      <h1>Recording your time out…</h1>
+      <p class="detail">One moment.</p>
+    </div>
+  </div>
+
+  <script>
+    // Same Apps Script backend that powers the door check-in scanner —
+    // paste the deployed /exec URL here (same one from checkin.html).
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzVeMTb0yk_FZlYfEHCyYGcfxEnzBhSrxOcpSuwB62-neywFep1kpo6djOD4O586Af2lg/exec';
+    const ACCESS_KEY = ''; // must match ACCESS_KEY in CheckInScript.gs if set
+
+    const STATES = {
+      timed_out: {
+        icon: '✓', iconClass: 'success',
+        title: 'Thank You for Attending!',
+        detail: 'Your evaluation has been recorded and your attendance is now complete. Safe travels, and see you at the next PSG-ICE event!',
+      },
+      already_timed_out: {
+        icon: '✓', iconClass: 'success',
+        title: 'Already Recorded',
+        detail: 'You\'ve already completed your evaluation and time-out earlier — no need to do anything else. Thank you!',
+      },
+      not_checked_in: {
+        icon: '⚠', iconClass: 'warn',
+        title: 'No Check-In Found',
+        detail: 'Your evaluation answers were still submitted, but we don\'t have a record of you checking in at the door under this ID Number, so your attendance couldn\'t be confirmed. If you did attend, please see PSG-ICE staff to sort this out.',
+      },
+      not_found: {
+        icon: '✕', iconClass: 'error',
+        title: 'Registration Not Found',
+        detail: 'Your evaluation answers were still submitted, but this ID Number doesn\'t match any registration on file. Please see PSG-ICE staff if you believe this is an error.',
+      },
+      error: {
+        icon: '!', iconClass: 'error',
+        title: 'Something Went Wrong',
+        detail: 'We couldn\'t reach the attendance system just now. Your evaluation answers were still submitted — please see PSG-ICE staff to confirm your time-out manually.',
+      },
+    };
+
+    function render(statusKey, data) {
+      const s = STATES[statusKey] || STATES.error;
+      const el = document.getElementById('content');
+      el.innerHTML = `
+        <div class="icon ${s.iconClass}">${s.icon}</div>
+        <h1>${s.title}</h1>
+        <p class="detail">${s.detail}</p>
+        ${data && data.name ? `<p class="name">${data.name}</p>` : ''}
+      `;
+    }
+
+    async function run() {
+      const params = new URLSearchParams(window.location.search);
+      const id = (params.get('id') || '').trim();
+
+      if (!id) {
+        render('error');
+        return;
+      }
+      if (APPS_SCRIPT_URL.includes('PASTE_YOUR')) {
+        render('error');
+        return;
+      }
+
+      try {
+        const key = ACCESS_KEY ? `&key=${encodeURIComponent(ACCESS_KEY)}` : '';
+        const res = await fetch(`${APPS_SCRIPT_URL}?id=${encodeURIComponent(id)}&action=timeout${key}`);
+        if (!res.ok) throw new Error('Network error');
+        const data = await res.json();
+        render(data.status, data);
+      } catch (e) {
+        render('error');
+      }
+    }
+
+    run();
+  </script>
+
+</body>
+</html>
