@@ -233,6 +233,53 @@
     color: var(--ivory-dim);
     margin-top: 26px;
   }
+
+  /* ---- Team Leader bling ---- */
+  .leader-badge {
+    display: none;
+    position: absolute;
+    top: 16px;
+    right: -1px;
+    background: linear-gradient(135deg, #f5e2a0, var(--gold-foil) 55%, #b8912a);
+    color: var(--felt-deep);
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 5px 12px 5px 10px;
+    border-radius: 4px 0 0 4px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.45);
+    z-index: 6;
+  }
+  .ticket.is-leader { overflow: hidden; }
+  .ticket.is-leader .leader-badge { display: block; }
+  .ticket.is-leader .stub-main,
+  .ticket.is-leader .stub-tear {
+    border-color: var(--gold-foil);
+    border-width: 1.5px;
+    box-shadow: 0 0 22px rgba(212,175,55,0.3), inset 0 0 30px rgba(212,175,55,0.06);
+  }
+  /* A soft gold sweep drifting across the card — subtle, not a slot machine */
+  .ticket.is-leader::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    left: -60%;
+    width: 45%;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,0.16), transparent);
+    transform: skewX(-18deg);
+    animation: leader-shine 4.5s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 7;
+  }
+  @keyframes leader-shine {
+    0%   { left: -60%; }
+    45%  { left: 130%; }
+    100% { left: 130%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ticket.is-leader::after { animation: none; display: none; }
+  }
   .footer-note strong { color: var(--gold-foil); font-weight: 500; }
 
   .save-btn {
@@ -277,6 +324,7 @@
 
   <div class="ticket" id="ticket">
     <div class="stub-main">
+      <span class="leader-badge">★ TEAM LEADER</span>
       <span class="admit-one">Admit One</span>
       <span class="suit" id="suit-main">♠</span>
       <div class="brandline">CE Day &amp; Night · 19 Sept 2026</div>
@@ -335,14 +383,28 @@
     function getParams() {
       const p = new URLSearchParams(window.location.search);
       const team = (p.get('team') || 'lucarians').toLowerCase().trim();
-      const isFaculty = team === 'faculty';
-      const isGuest = team === 'guest';
-      let detail = p.get('year') || p.get('program') || '';
-      if (isFaculty) detail = p.get('dept') || detail;
-      if (isGuest) {
-        const purpose = p.get('purpose') || '';
+      const isLeader = (p.get('isLeader') || 'no').toLowerCase().trim() === 'yes';
+
+      // Which "detail" field to show is decided by which raw params are
+      // actually present, NOT by the final team value. This matters now
+      // that Team Leaders remap their team to their led team (e.g.
+      // "lucarians") rather than staying "faculty" — checking team==='faculty'
+      // would silently break their Department display, since their team
+      // no longer says "faculty" even though they answered as faculty.
+      const deptVal = p.get('dept');
+      const purposeVal = p.get('purpose');
+      let detail = '';
+      let fieldKind = 'year';
+      if (deptVal) {
+        detail = deptVal;
+        fieldKind = 'dept';
+      } else if (purposeVal !== null && purposeVal !== '') {
         const org = p.get('org') || '';
-        detail = org ? `${purpose} — ${org}` : purpose;
+        detail = org ? `${purposeVal} — ${org}` : purposeVal;
+        fieldKind = 'purpose';
+      } else {
+        detail = p.get('year') || p.get('program') || '';
+        fieldKind = 'year';
       }
 
       const rawId = p.get('id') || p.get('submissionId');
@@ -361,9 +423,9 @@
         name: p.get('name') || 'Guest',
         idnum: p.get('idnum') || '—',
         year: detail,
+        fieldKind,
         team,
-        isFaculty,
-        isGuest,
+        isLeader,
         isBroken,
         id: rawId || (isDemo ? cryptoFallbackId() : null),
       };
@@ -412,8 +474,15 @@
       document.getElementById('f-year').textContent = data.year || '—';
       document.getElementById('f-idnum').textContent = data.idnum;
       document.getElementById('f-id').textContent = data.id;
-      document.getElementById('f-year-label').textContent = data.isFaculty ? 'Department / Office' : (data.isGuest ? 'Purpose' : 'Program / Year');
-      document.getElementById('f-team-label').textContent = (data.isFaculty || data.isGuest) ? 'Role' : 'Team';
+      document.getElementById('f-year-label').textContent =
+        data.fieldKind === 'dept' ? 'Department / Office' : data.fieldKind === 'purpose' ? 'Purpose' : 'Program / Year';
+      document.getElementById('f-team-label').textContent =
+        data.isLeader ? 'Team (Leader)' : (data.fieldKind === 'dept' || data.fieldKind === 'purpose') ? 'Role' : 'Team';
+
+      if (data.isLeader) {
+        document.getElementById('ticket').classList.add('is-leader');
+        document.querySelector('.subtitle').textContent = 'Team Leader ticket & attendance pass';
+      }
 
       // QR encodes ONLY the ID Number — short and dense-enough-to-scan-reliably.
       // (Earlier version encoded the full ticket URL with every field; that
